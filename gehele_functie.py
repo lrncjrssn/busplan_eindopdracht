@@ -1,26 +1,4 @@
 
-
-
-# Alles naar string zetten (veilig)
-
-#planning["start location"] = planning["start location"].astype(str)
-#planning["end location"] = planning["end location"].astype(str)
-#planning["line"] = planning["line"].astype(str)
-
-#matrix["start"] = matrix["start"].astype(str)
-#matrix["end"] = matrix["end"].astype(str)
-#matrix["line"] = matrix["line"].astype(str)
-
-# Merge op drie kolommen tegelijk
-#matched = planning.merge(matrix,left_on=["start location", "end location", "line"], right_on=["start", "end", "line"],how="inner")
-
-#matched
-
-#matched["min_travel_time"] = pd.to_timedelta(matched["min_travel_time"], unit = "m")
-#matched["max_travel_time"] = pd.to_timedelta(matched["max_travel_time"], unit = "m")
-#matched["start time"] = pd.to_datetime(matched["start time"], format="%H:%M:%S")
-#matched["end time"] = pd.to_datetime(matched["end time"], format="%H:%M:%S")
-#matched["duur"] = matched["end time"] - matched["start time"]
 import pandas as pd
 import numpy as np
 def import_busplan(file):
@@ -50,7 +28,7 @@ def add_duration_activities(schedule):
         DataFrame: Schedule with a new 'duration' column (end time - start time).
         If bus schedule is feasible.
     """
-    schedule = schedule.copy()
+    #schedule = schedule.copy()
     schedule["start time"] = pd.to_datetime(schedule["start time"], format="%H:%M:%S")
     schedule["end time"] = pd.to_datetime(schedule["end time"], format="%H:%M:%S")
     schedule["duration"] = schedule["end time"] - schedule["start time"]
@@ -164,7 +142,7 @@ def check_charging(schedule,min_laden):
     if len_too_short.any():
         print(f'let op, controleer de volgende rij(en) {df_charging[len_too_short]} want deze hebben een laadduur van minder dan {min_laden} minuten')
     else:
-        print('de laadduur is voor alle activiteiten langer dan de minimale laadduur')
+        print('Het opladen duurt altijd langer dan de minimale laadduur')
             
 def check_battery_level(schedule, max_bat, max_charging_percentage, state_of_health, min_percentage):
     """
