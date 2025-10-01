@@ -1,6 +1,8 @@
-
+import streamlit as st
 import pandas as pd
 import numpy as np
+
+
 def import_busplan(file):
     """
     Load the bus schedule and distance matrix from Excel files.
@@ -140,61 +142,51 @@ def check_charging(schedule,min_laden):
     df_charging['duration'] = (df_charging['end time'] - df_charging['start time'])
     len_too_short = df_charging['duration']<= pd.Timedelta(minutes=min_laden)
     if len_too_short.any():
-        print(f'let op, controleer de volgende rij(en) {df_charging[len_too_short]} want deze hebben een laadduur van minder dan {min_laden} minuten')
+        return df_charging[too_short]
     else:
-        print('Het opladen duurt altijd langer dan de minimale laadduur')
+        return None
             
 def check_battery_level(schedule, max_bat, max_charging_percentage, state_of_health, min_percentage):
     """
-    Simulate battery consumption for each bus and check if battery levels remain above the minimum.
+    Simuleer batterijverbruik en controleer of onder de minimumgrens wordt gekomen.
+    """
+    results = []
 
-    Parameters:
-        schedule (DataFrame): Bus schedule with 'bus', 'activity', 'duration', 'energy consumption'.
-        max_bat (float): Maximum battery capacity.
-        max_charging_percentage (float): Target charging percentage.
-        state_of_health (float): Battery health as a percentage.
-        min_percentage (float): Minimum allowed battery percentage.
-
-    Prints:
-        Warnings if any bus drops below minimum battery level during its schedule.
-    """        
     n = len(schedule)
     hvl_bus = len(schedule["bus"].unique())
-    max_bat = int(max_bat)
-    max_charging_percentage = int(max_charging_percentage)
-    state_of_health = int(state_of_health)
-    min_percentage = int(min_percentage)
+    max_bat = float(max_bat)
+    max_charging_percentage = float(max_charging_percentage)
+    state_of_health = float(state_of_health)
+    min_percentage = float(min_percentage)
 
-    bat_status = max_bat * (state_of_health / 100) #
-    bat_begin = bat_status * (max_charging_percentage / 100) # 90 procent
+    bat_status = max_bat * (state_of_health / 100)
+    bat_begin = bat_status * (max_charging_percentage / 100)
     bat_min = bat_status * (min_percentage / 100)
 
     i = 0
-    incorrect = 0
-    for b in range(1, hvl_bus ):
+    for b in range(1, hvl_bus + 1):
         bat_moment = bat_begin
-        while i <= n and schedule["bus"][i] == b:
-            if schedule["activity"][i] == "idle":
-                minutes = schedule["duration"][i].total_seconds() / 60
-                energy_consumption = minutes * (schedule["energy consumption"][i] / 60)
+        while i < n and schedule["bus"].iloc[i] == b:
+            if schedule["activity"].iloc[i] == "idle":
+                minutes = schedule["duration"].iloc[i].total_seconds() / 60
+                energy_consumption = minutes * (schedule["energy consumption"].iloc[i] / 60)
                 bat_moment -= energy_consumption
             else:
-                bat_moment -= schedule["energy consumption"][i]
+                bat_moment -= schedule["energy consumption"].iloc[i]
 
             if bat_moment < bat_min:
-                incorrect += 1
                 bat_percentage = (bat_moment / bat_status) * 100
-                print(f'the busplan for bus {b} is not correct after row {i}, de battery status is then {bat_percentage:.2f}%')
-                # overslaan naar volgende bus
-                while i < n and schedule["bus"][i] == b:
+                results.append(
+                    f"Bus {b}: batterij te laag na rij {i}, status = {bat_percentage:.2f}%"
+                )
+                # skip naar volgende bus
+                while i < n and schedule["bus"].iloc[i] == b:
                     i += 1
                 break
-
             i += 1
 
-        if incorrect == 0:
-            print("the busplan werkt voor de batterijstatus")
-    
+    return results if results else None
+
 def check_all_busplan(file, max_bat, max_charging_percentage, state_of_health, min_percentage, min_laden):
     """
     Run a complete set of checks on the bus schedule and distance matrix.
@@ -221,7 +213,95 @@ def check_all_busplan(file, max_bat, max_charging_percentage, state_of_health, m
     check_charging(schedule,min_laden)
     check_battery_level(schedule, max_bat, max_charging_percentage, state_of_health, min_percentage)           
 
+def import_busplan(file, matrix_file):
+    """
+    Load the bus schedule and distance matrix from Excel files.
+    """
+    schedule = pd.read_excel(file)
+    matrix = pd.read_excel(matrix_file)
+    return schedule, matrix
 
-if __name__ == "__main__":
-    check_all_busplan("Bus planning.xlsx", 300, 90, 95, 10, 15)    
+st.title("🚍 Busplan Checker")
 
+uploaded_schedule = st.file_uploader("Upload het busplan (Excel)", type=["xlsx"])
+uploaded_matrix = st.file_uploader("Upload de distance matrix (Excel)", type=["xlsx"])
+
+st.sidebar.header("setting parameters")
+
+max_bat = st.sidebar.number_input("Maximum battery capacity (kWh)", value=350.0, step=1.0)
+max_charging_percentage = st.sidebar.number_input("maximum charging percentage (%)", value=90.0, step=1.0)
+state_of_health = st.sidebar.number_input("State of Health (%)", value=95.0, step=1.0)
+min_percentage = st.sidebar.number_input("Minimum battery percentage (%)", value=10.0, step=1.0)
+min_laden = st.sidebar.number_input("minimum chaging time (minuten)", value=30.0, step=1.0)
+
+if uploaded_schedule and uploaded_matrix:
+    # Data inladen
+    schedule, matrix = import_busplan(uploaded_schedule, uploaded_matrix)
+
+    st.subheader("📅 Bus Schedule")
+    st.dataframe(schedule.head(10))
+
+    st.subheader("🗺️ Distance Matrix")
+    st.dataframe(matrix.head(10))
+
+    if st.button("Start check"):
+        st.subheader("results of the checks")
+
+        try:
+            schedule = add_duration_activities(schedule)
+            matrix = min_max_duration_travel_times(matrix)
+            matched = merge_schedule_matrix(schedule, matrix)
+
+            # Reistijden check
+            invalid_travel = travel_time(matched)
+            st.write("**Reistijden check:**")
+            if invalid_travel:
+                st.error(f"there are travel times which are not in the marges: {invalid_travel}")
+            else:
+                st.success("all travel times are within the marges")
+
+            # Negatieve starttijden
+            invalid_start = invalid_start_time(schedule)
+            st.write("**Negatieve starttijden:**")
+            if invalid_start:
+                st.warning(f"check rows {invalid_start} there might be negative starttimes, check if they ride at night.")
+            else:
+                st.success("there are no negative starttimes")
+
+            # Dubbele bus overlappingen
+            dubbele = dubbele_bus(schedule)
+            st.write("**overlapping bus rides:**")
+            if dubbele:
+                st.warning(f"there are overlapping bus rides, check: {dubbele}.")
+            else:
+                st.success("there are no overlapping bus rides.")
+
+            # Laadduur check (gebruik return)
+            st.write("**charging time check:**")
+            charging_issues = check_charging(schedule, min_laden)
+            if charging_issues is not None:
+                st.error("these charging times are too short:")
+                st.dataframe(charging_issues)
+            else:
+                st.success("the charging is longer then the minimum charging time.")
+
+            # Batterij check (gebruik return)
+            st.write("**battery check**")
+            battery_issues = check_battery_level(
+                schedule,
+                max_bat,
+                max_charging_percentage,
+                state_of_health,
+                min_percentage
+            )
+            if battery_issues is not None:
+                for msg in battery_issues:
+                    st.error(msg)
+            else:
+                st.success("all busses stay above the minimum battery status")
+
+        except Exception as e:
+            st.error(f"something went wrong at check {e}")
+
+# streamlit run start_web_versie.py
+print("hello")
