@@ -221,5 +221,7 @@ def check_all_busplan(file, max_bat, max_charging_percentage, state_of_health, m
     check_charging(schedule,min_laden)
     check_battery_level(schedule, max_bat, max_charging_percentage, state_of_health, min_percentage)           
 
-check_all_busplan("Bus planning.xlsx", 300, 90, 95, 20, 30)    
+
+if __name__ == "__main__":
+    check_all_busplan("Bus planning.xlsx", 300, 90, 95, 20, 30)    
 
