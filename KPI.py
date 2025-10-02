@@ -6,13 +6,63 @@
 # percentage opladen vs totale ritduur????
 # aaaaaaaaaagem idle time per bus
 import pandas as pd
-import pandas as pd
+
+# per bus probeersel
 schedule  = pd.read_excel('Bus Planning.xlsx')
 schedule["start time"] = pd.to_datetime(schedule["start time"], format="%H:%M:%S")
 schedule["end time"] = pd.to_datetime(schedule["end time"], format="%H:%M:%S")
 schedule["duration"] = schedule["end time"] - schedule["start time"]
-a = schedule.iloc[60]
-a.head()
+
+total_duration = schedule['duration'].sum()
+print(total_duration)
+busnmbr = (schedule['bus'].unique())
+results = []
+activities=["material trip", "charging", "idle", "service trip"]
+for b in busnmbr:
+    schedule_busi = schedule[schedule['bus']==b]
+        
+    for i in activities:
+        schedule_activtyi = schedule[schedule['activity'] == i].copy()
+        total_activityi = schedule_activtyi['duration'].sum()
+        if total_duration > pd.Timedelta(0):
+            per_activity = total_activityi/total_duration*100
+        else:
+            per_activity=0
+        results.append({
+            'bus':b,
+            'activity': i,
+            'total_time': total_activityi,
+            'percentage' : per_activity
+                        })
+    results_df = pd.DataFrame(results)
+    results_df.loc[len(results_df)] = {
+        'bus':'All busses',
+        'activity': 'Total',
+        'total_time': total_duration,            
+        'percentage': 100.0      
+        }
+pivot_df = results_df.pivot(
+    index="bus",
+    columns="activity",
+    values=["total_time", "percentage"]
+)
+
+# Kolomnamen netjes maken
+pivot_df.columns = [f"{val}_{col}" for val, col in pivot_df.columns]
+pivot_df = pivot_df.reset_index()
+
+print("Brede tabel per bus:")
+print(pivot_df)
+
+## Optie 2: Gesorteerd logboek per bus
+sorted_df = results_df.sort_values(["bus", "activity"]).reset_index(drop=True)
+
+print("\nLange tabel per bus (logboek):")
+print(sorted_df)
+#print(results_df)
+
+
+
 #import busplan
 def import_busplan(file):
     """
@@ -28,6 +78,7 @@ def import_busplan(file):
     import pandas as pd
     schedule  = pd.read_excel(file)
     return schedule
+
 #duur activiteiten
 def add_duration_activities(schedule):
     """
