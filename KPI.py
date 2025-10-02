@@ -6,7 +6,13 @@
 # percentage opladen vs totale ritduur????
 # aaaaaaaaaagem idle time per bus
 import pandas as pd
-
+import pandas as pd
+schedule  = pd.read_excel('Bus Planning.xlsx')
+schedule["start time"] = pd.to_datetime(schedule["start time"], format="%H:%M:%S")
+schedule["end time"] = pd.to_datetime(schedule["end time"], format="%H:%M:%S")
+schedule["duration"] = schedule["end time"] - schedule["start time"]
+a = schedule.iloc[60]
+a.head()
 #import busplan
 def import_busplan(file):
     """
@@ -149,7 +155,7 @@ def df_per_busi_kpi(schedule):
         
         results.append({
                 'bus': i,
-                'time_shift' :shift_duration,
+                'duration_time_shift' :shift_duration,
                 'times_charging': times_charging,
                 'total_energy': total_energy,
                 'total_idle_duration': dur_idle,
@@ -201,6 +207,8 @@ def all_kpi(file, max_bat, max_charging_percentage, state_of_health):
     df_battery_level = battery_after_every_activity(schedule, max_bat, max_charging_percentage, state_of_health)
     return df_timetable, bus_stats_df, df_battery_level
 
+
 # check
-df_timetable, bus_stats_df, df_battery_level = all_kpi('Bus planning.xlsx',300, 90,85)
-print(df_timetable, bus_stats_df, df_battery_level)
+#df_timetable, bus_stats_df, df_battery_level = all_kpi('Bus planning.xlsx',300, 90,85)
+#print(df_timetable, bus_stats_df, df_battery_level)
+
