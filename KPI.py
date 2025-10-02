@@ -75,7 +75,11 @@ def not_driving_trip_duration(schedule): # duur. mat_charging_udke
 
     print(per_charging+per_idle+per_material, '% van de tijd dat bus geen mensen vervoerd.') 
 
+<<<<<<< Updated upstream
 def not_driving_trip_duration_kort(schedule):
+=======
+def not_drivinf_trip_duration_kort(schedule):
+>>>>>>> Stashed changes
     total_duration = schedule['duration'].sum()
     print(total_duration)
 
@@ -195,7 +199,11 @@ def battery_after_every_activity(schedule, max_bat, max_charging_percentage, sta
 def all_kpi(file, max_bat, max_charging_percentage, state_of_health):
     schedule = import_busplan(file)
     schedule = add_duration_activities(schedule)
+<<<<<<< Updated upstream
     df_timetable = not_driving_trip_duration_kort(schedule)
+=======
+    df_timetable = not_drivinf_trip_duration_kort(schedule)
+>>>>>>> Stashed changes
     bus_stats_df = df_per_busi_kpi(schedule)
     df_battery_level = battery_after_every_activity(schedule, max_bat, max_charging_percentage, state_of_health)
     return df_timetable, bus_stats_df, df_battery_level
