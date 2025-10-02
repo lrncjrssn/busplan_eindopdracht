@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 
 
-def import_busplan(file):
+def import_busplan(file, matrix_file, timetable_file):
     """
     Load the bus schedule and distance matrix from Excel files.
 
@@ -16,8 +16,42 @@ def import_busplan(file):
     """
     import pandas as pd
     schedule  = pd.read_excel(file)
-    matrix = pd.read_excel("DistanceMatrix.xlsx")
-    return schedule, matrix
+    matrix = pd.read_excel(matrix_file)
+    timetable = pd.read_excel(timetable_file)
+    return schedule, matrix, timetable
+
+def merged_schedule_timetable(schedule, timetable):
+    """
+    Merge the bus schedule with the timetable to ensure all activities are included.
+
+    Parameters:
+        schedule (DataFrame): Bus schedule with 'bus', 'start location', 'end location', 'line', 'start time', and 'end time'.
+        timetable (DataFrame): Timetable with 'bus', 'start location', 'end location', 'line', 'start time', and 'end time'.
+
+    Returns:
+        DataFrame: Merged schedule containing all activities from both the schedule and timetable.
+    """
+    schedule2 = schedule.copy()
+    timetable = timetable.rename(columns={"start": "start location", "end": "end location", "departure_time":"start time"})
+    schedule2 = schedule2.drop(["bus","end time"], axis=1)
+   
+    schedule2["start location"] = schedule2["start location"].astype(str)
+    schedule2["end location"] = schedule2["end location"].astype(str)
+    schedule2["line"] = schedule2["line"].astype(str)
+
+    timetable["start location"] = timetable["start location"].astype(str)
+    timetable["end location"] = timetable["end location"].astype(str)
+    timetable["line"] = timetable["line"].astype(str)
+
+    merged_schedule = pd.merge(
+        schedule2,
+        timetable,
+        on = ["start location", "end location", "line", "start time"],
+        how="inner",
+        indicator=True
+    )
+
+    return merged_schedule
 
 def add_duration_activities(schedule):
     """
@@ -34,9 +68,10 @@ def add_duration_activities(schedule):
     schedule["start time"] = pd.to_datetime(schedule["start time"], format="%H:%M:%S")
     schedule["end time"] = pd.to_datetime(schedule["end time"], format="%H:%M:%S")
     schedule["duration"] = schedule["end time"] - schedule["start time"]
+    #schedule = schedule[schedule["duration"] != pd.Timedelta(0)]
     return schedule
 
-def  merge_schedule_matrix(schedule, matrix):
+def merge_schedule_matrix(schedule, matrix):
     schedule["start location"] = schedule["start location"].astype(str)
     schedule["end location"] = schedule["end location"].astype(str)
     schedule["line"] = schedule["line"].astype(str)
@@ -57,6 +92,14 @@ def  merge_schedule_matrix(schedule, matrix):
     matched = matched.drop(columns=["start", "end"])
     return matched
     
+def remove_zero_duration(schedule, matrix):
+    """
+    Remove activities with zero duration from the schedule.
+    """
+    matched = merge_schedule_matrix(schedule, matrix)
+    matched = matched[matched["duration"] != pd.Timedelta(0)]
+    return matched
+
 def min_max_duration_travel_times(matrix):
     """
     Convert travel time columns to timedelta for easier comparison.
@@ -83,10 +126,11 @@ def travel_time(matched):
     Returns:
         list: List of row indices where travel time is outside allowed range.
     """
+
     n = len(matched)
     invalid = []
     for i in range (n):
-        if matched["duration"].iloc[i] > matched["max_travel_time"].iloc[i] and matched["duration"].iloc[i] < matched["min_travel_time"].iloc[i]:
+        if matched["duration"].iloc[i] > matched["max_travel_time"].iloc[i] or matched["duration"].iloc[i] < matched["min_travel_time"].iloc[i]:
             invalid.append(i)
     return invalid
 
@@ -142,7 +186,7 @@ def check_charging(schedule,min_laden):
     df_charging['duration'] = (df_charging['end time'] - df_charging['start time'])
     len_too_short = df_charging['duration']<= pd.Timedelta(minutes=min_laden)
     if len_too_short.any():
-        return df_charging[too_short]
+        return df_charging[len_too_short]
     else:
         return None
             
@@ -177,7 +221,7 @@ def check_battery_level(schedule, max_bat, max_charging_percentage, state_of_hea
             if bat_moment < bat_min:
                 bat_percentage = (bat_moment / bat_status) * 100
                 results.append(
-                    f"Bus {b}: batterij te laag na rij {i}, status = {bat_percentage:.2f}%"
+                    f"Bus {b}: battery is to low after row {i}, status = {bat_percentage:.2f}%"
                 )
                 # skip naar volgende bus
                 while i < n and schedule["bus"].iloc[i] == b:
@@ -221,7 +265,7 @@ def import_busplan(file, matrix_file):
     matrix = pd.read_excel(matrix_file)
     return schedule, matrix
 
-st.title("🚍 Busplan Checker")
+st.title("Busplan Checker")
 
 uploaded_schedule = st.file_uploader("Upload het busplan (Excel)", type=["xlsx"])
 uploaded_matrix = st.file_uploader("Upload de distance matrix (Excel)", type=["xlsx"])
@@ -238,11 +282,11 @@ if uploaded_schedule and uploaded_matrix:
     # Data inladen
     schedule, matrix = import_busplan(uploaded_schedule, uploaded_matrix)
 
-    st.subheader("📅 Bus Schedule")
-    st.dataframe(schedule.head(10))
+    st.subheader("Bus Schedule")
+    st.dataframe(schedule.head(5))
 
-    st.subheader("🗺️ Distance Matrix")
-    st.dataframe(matrix.head(10))
+    st.subheader("Distance Matrix")
+    st.dataframe(matrix.head(5))
 
     if st.button("Start check"):
         st.subheader("results of the checks")
@@ -254,7 +298,7 @@ if uploaded_schedule and uploaded_matrix:
 
             # Reistijden check
             invalid_travel = travel_time(matched)
-            st.write("**Reistijden check:**")
+            st.write("**travel time check:**")
             if invalid_travel:
                 st.error(f"there are travel times which are not in the marges: {invalid_travel}")
             else:
@@ -262,7 +306,7 @@ if uploaded_schedule and uploaded_matrix:
 
             # Negatieve starttijden
             invalid_start = invalid_start_time(schedule)
-            st.write("**Negatieve starttijden:**")
+            st.write("**Negative starttimes:**")
             if invalid_start:
                 st.warning(f"check rows {invalid_start} there might be negative starttimes, check if they ride at night.")
             else:
@@ -304,4 +348,3 @@ if uploaded_schedule and uploaded_matrix:
             st.error(f"something went wrong at check {e}")
 
 # streamlit run start_web_versie.py
-print("hello")
