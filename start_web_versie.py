@@ -365,16 +365,16 @@ def not_drivinf_trip_duration_kort(schedule):
         schedule_activtyi = schedule[schedule['activity'] == i].copy()
         total_activityi = schedule_activtyi['duration'].sum()
 
-        per_activity = total_activityi/total_duration*100
+        per_activity = round(total_activityi/total_duration*100, 2)
         results.append({
             'activity': i,
-            'total_time': total_activityi,
+            'total time': total_activityi,
             'percentage' : per_activity
                     })
     results_df = pd.DataFrame(results)
     results_df.loc[len(results_df)] = {
         'activity': 'Total',
-        'total_time': total_duration,
+        'total time': total_duration,
         'percentage': 100.0
     }
     return results_df
@@ -414,6 +414,12 @@ def time_bus_shift(schedule_busi):
     shift_duration = end_shift - start_shift
     return shift_duration
 # alle pki's per bus in 1 functie gezet in df 
+def format_timedelta(duur):
+    totaal_seconden = int(duur.total_seconds())
+    uren = totaal_seconden // 3600
+    minuten = (totaal_seconden % 3600) // 60
+    return f"{uren:02}:{minuten:02}"
+
 def df_per_busi_kpi(schedule):
     busnmbr = number_of_busses(schedule)
     results = []
@@ -428,13 +434,13 @@ def df_per_busi_kpi(schedule):
         shift_duration =  time_bus_shift(schedule_busi)
         
         results.append({
-                'bus': i,
-                'duration_time_shift' :shift_duration,
-                'times_charging': times_charging,
-                'total_energy': total_energy,
-                'total_idle_duration': dur_idle,
-                'avg_idle_duration': avg_idle
-            })
+            'bus': i,
+            'duration time shift (HH:MM)' : format_timedelta(shift_duration),
+            'times charging': times_charging,
+            'total energy': total_energy,
+            'total idle duration (HH:MM)': format_timedelta(dur_idle),
+            'avg idle duration (HH:MM)': format_timedelta(avg_idle)
+        })
     bus_stats_df = pd.DataFrame(results)
     return bus_stats_df
 
