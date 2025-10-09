@@ -303,7 +303,6 @@ def check_all_busplan(file, max_bat, max_charging_percentage, state_of_health, m
     check_charging(schedule,min_laden)
     check_battery_level(schedule, max_bat, max_charging_percentage, state_of_health, min_percentage)           
 
-
 def add_duration_activities(schedule):
     """
     Calculate the duration of each activity in the schedule.
@@ -591,9 +590,9 @@ if uploaded_schedule and uploaded_matrix and uploaded_timetable:
         except Exception as e:
             st.error(f"something went wrong at check {e}")
 
-    # --- Nieuwe knop: KPI-analyse ---
+    #Nieuwe knop: KPI-analyse
     if st.button("Show KPI analysis"):
-        st.subheader("📊 KPI Results")
+        st.subheader("KPI Results")
 
         try:
             # KPI’s berekenen
@@ -604,17 +603,19 @@ if uploaded_schedule and uploaded_matrix and uploaded_timetable:
             state_of_health
             )
 
+            # Toon aantal bussen
+            aantal_bussen = len(schedule['bus'].unique())
+            st.write(f"### Number of buses in this schedule: {aantal_bussen}")
 
             # Toon algemene activiteitverdeling
-            st.write("### ⏱️ Totale tijdsverdeling (alle bussen samen)")
+            st.write("### total time per activity (all buses)")
             st.dataframe(df_timetable)
 
             # Toon KPI’s per bus
-            st.write("### 🚌 KPI’s per bus")
+            st.write("### KPI’s per bus")
             st.dataframe(bus_stats_df)
-
             # Toon batterijprofiel
-            st.write("### 🔋 Batterijverloop per activiteit")
+            st.write("### battery level after each activity")
             st.dataframe(df_battery_level)
 
         except Exception as e:
