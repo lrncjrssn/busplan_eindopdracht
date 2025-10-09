@@ -5,11 +5,6 @@ import numpy as np
 schedule  = pd.read_excel("Bus Planning.xlsx")
 timetable = pd.read_excel("Timetable.xlsx")
 
-import pandas as pd
-
-schedule  = pd.read_excel("Bus Planning.xlsx")
-timetable = pd.read_excel("Timetable.xlsx")
-
 def schedule_not_in_timetable(schedule, timetable):
     # Kopie maken van schedule
     schedule2 = schedule.copy()
@@ -40,11 +35,14 @@ def schedule_not_in_timetable(schedule, timetable):
     print("Schedule times:", schedule2["start time"].unique()[:20])
     print("Timetable times:", timetable["start time"].unique()[:20])
 
+    print (schedule2.head())
+    print (timetable.head())
 
     merged = pd.merge(
         schedule2,
         timetable,
-        on=["start location", "end location", "line", "start time"],
+        left_on=["start location", "end location", "line", "start time"],
+        right_on=["start location", "end location", "line", "start time"],
         how="left",
         indicator=True
     )

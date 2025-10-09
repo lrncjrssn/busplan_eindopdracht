@@ -5,17 +5,9 @@ import numpy as np
 
 def import_busplan(file, matrix_file, timetable_file):
     """
-    Load the bus schedule and distance matrix from Excel files.
-
-    Parameters:
-        file (str): Path to the bus schedule Excel file.
-        matrix_file (str): Path to the distance matrix Excel file. Defaults to "DistanceMatrix.xlsx".
-
-    Returns:
-        tuple: (schedule DataFrame, matrix DataFrame)
+    Load the bus schedule, distance matrix, and timetable from Excel files.
     """
-    import pandas as pd
-    schedule  = pd.read_excel(file)
+    schedule = pd.read_excel(file)
     matrix = pd.read_excel(matrix_file)
     timetable = pd.read_excel(timetable_file)
     return schedule, matrix, timetable
@@ -231,6 +223,60 @@ def check_battery_level(schedule, max_bat, max_charging_percentage, state_of_hea
 
     return results if results else None
 
+def schedule_not_in_timetable(schedule, timetable):
+    """
+    Controleer welke 'service trip' ritten in schedule niet in de timetable staan.
+    Retourneert: (missing_df, bad_schedule_lines_df, bad_timetable_lines_df)
+    """
+    schedule2 = schedule.copy()
+    timetable2 = timetable.copy()
+
+    # Kolommen van timetable hernoemen zodat ze matchen (als die kolomnamen bestaan)
+    timetable2 = timetable2.rename(columns={
+        "start": "start location",
+        "end": "end location",
+        "departure_time": "start time"
+    })
+
+    # Alleen service trips behouden
+    schedule2 = schedule2[schedule2.get("activity", "") == "service trip"].copy()
+
+    # Drop kolommen als ze bestaan
+    schedule2 = schedule2.drop(["bus", "end time", "energy consumption", "activity"], axis=1, errors='ignore')
+
+    # Zet locaties om naar strings en strip whitespace
+    for col in ["start location", "end location"]:
+        schedule2[col] = schedule2[col].astype(str).str.strip()
+        timetable2[col] = timetable2[col].astype(str).str.strip()
+
+    # NORMALISEER 'line' naar string zonder trailing .0
+    for df in (schedule2, timetable2):
+        if "line" in df.columns:
+            df["line"] = df["line"].astype(str).str.strip().str.replace(r"\.0+$", "", regex=True)
+        else:
+            df["line"] = ""
+
+    # Zet tijden veilig om
+    schedule2["start time"] = pd.to_datetime(schedule2["start time"], errors="coerce").dt.strftime("%H:%M")
+    timetable2["start time"] = pd.to_datetime(timetable2["start time"], errors="coerce").dt.strftime("%H:%M")
+
+    # Zoek rijen met rare line waarden
+    bad_schedule_lines = schedule2[~schedule2["line"].str.match(r"^\d+$", na=False)].copy()
+    bad_timetable_lines = timetable2[~timetable2["line"].str.match(r"^\d+$", na=False)].copy()
+
+    # Merge en vind verschillen
+    merged = pd.merge(
+        schedule2,
+        timetable2,
+        on=["start location", "end location", "line", "start time"],
+        how="left",
+        indicator=True
+    )
+
+    missing = merged[merged["_merge"] == "left_only"].drop(columns=["_merge"])
+
+    return missing, bad_schedule_lines, bad_timetable_lines
+
 def check_all_busplan(file, max_bat, max_charging_percentage, state_of_health, min_percentage, min_laden):
     """
     Run a complete set of checks on the bus schedule and distance matrix.
@@ -257,18 +303,187 @@ def check_all_busplan(file, max_bat, max_charging_percentage, state_of_health, m
     check_charging(schedule,min_laden)
     check_battery_level(schedule, max_bat, max_charging_percentage, state_of_health, min_percentage)           
 
-def import_busplan(file, matrix_file):
+def add_duration_activities(schedule):
     """
-    Load the bus schedule and distance matrix from Excel files.
+    Calculate the duration of each activity in the schedule.
+
+    Parameters:
+        schedule (DataFrame): Bus schedule with 'start time' and 'end time' columns.
+
+    Returns:
+        DataFrame: Sch edule with a new 'duration' column (end time - start time).
+        If bus schedule is feasible.
     """
-    schedule = pd.read_excel(file)
-    matrix = pd.read_excel(matrix_file)
-    return schedule, matrix
+    schedule["start time"] = pd.to_datetime(schedule["start time"], format="%H:%M:%S")
+    schedule["end time"] = pd.to_datetime(schedule["end time"], format="%H:%M:%S")
+    schedule["duration"] = schedule["end time"] - schedule["start time"]
+    return schedule
+
+# TIJD MANAGMENT
+#duur en percentage materiaalrit, charging en idle
+def not_driving_trip_duration(schedule): # duur. mat_charging_udke
+    total_duration = schedule['duration'].sum()
+    print(total_duration)
+    
+    schedule_material = schedule[schedule['activity'] == 'material trip'].copy()
+    total_material = schedule_material['duration'].sum()
+    print(total_material)
+
+    per_material = total_material/total_duration*100
+    print(f'{per_material:.2f}% van de totale tijd zijn materiaalritten')# kijken naar afronding
+
+    schedule_charging = schedule[schedule['activity'] == 'charging'].copy()
+    total_charging = schedule_charging['duration'].sum()
+    print(total_charging)
+
+    per_charging = total_charging/total_duration*100
+    print(f'{per_charging:.2f}% van de totale tijd zijn opladen')
+
+    schedule_idle = schedule[schedule['activity'] == 'idle'].copy()
+    total_idle = schedule_idle['duration'].sum()    
+    print(total_idle)
+
+    per_idle = total_idle/total_duration*100
+    print(f'{per_idle:.2f}% % van de totale tijd is besteed aan idle')
+    
+    schedule_service_trip = schedule[schedule['activity'] == 'service trip'].copy()
+    total_service_trip = schedule_service_trip['duration'].sum()    
+    print(total_service_trip)
+
+    per_service_trip = total_service_trip/total_duration*100
+    print(f'{per_service_trip:.2f}% % van de totale tijd is besteed aan idle')
+
+    print(per_charging+per_idle+per_material, '% van de tijd dat bus geen mensen vervoerd.') 
+
+def not_drivinf_trip_duration_kort(schedule):
+    total_duration = schedule['duration'].sum()
+    print(total_duration)
+
+    activities=["material trip", "charging", "idle", "service trip"]
+    results = []
+    for i in activities:
+        schedule_activtyi = schedule[schedule['activity'] == i].copy()
+        total_activityi = schedule_activtyi['duration'].sum()
+
+        per_activity = total_activityi/total_duration*100
+        results.append({
+            'activity': i,
+            'total_time': total_activityi,
+            'percentage' : per_activity
+                    })
+    results_df = pd.DataFrame(results)
+    results_df.loc[len(results_df)] = {
+        'activity': 'Total',
+        'total_time': total_duration,
+        'percentage': 100.0
+    }
+    return results_df
+
+# KPI PER BUS  
+# aantalbussen 
+def number_of_busses(schedule): ## aantal bussen
+    busnmbr = (schedule['bus'].unique())
+    return busnmbr
+# aantal keer bus opladen per bus    
+def times_charging_bus(schedule_busi):
+    times_charging = len(schedule_busi[schedule_busi['activity']=='charging'])#hoevaak bus oplaadt
+    #print(f'bus {i}, laad {times_charging} keer op')
+    return times_charging
+# totale energy consumptie
+def total_energy_use(schedule_busi):
+    schedule_busi_not_charging = schedule_busi[schedule_busi['activity']!='charging']#totale energie veerbuik
+    tot_use = schedule_busi_not_charging['energy consumption'].sum()
+    #print('tot use',tot_use)
+    return tot_use
+# duur idle en avg per bus    
+def idle_time_avg__per_bus(schedule_busi):
+    schedule_busi_idle = schedule_busi[schedule_busi['activity']=='idle']
+    dur_idle = schedule_busi_idle['duration'].sum()
+    #print('idle', dur_idle)
+    if len(schedule_busi_idle) ==0:
+        avg_idle_time = pd.Timedelta(0)
+    else:
+            avg_idle_time = dur_idle/len(schedule_busi_idle)
+    #print(gem_idle_time, 'gem')
+    return dur_idle, avg_idle_time
+#shift duur per bus
+def time_bus_shift(schedule_busi):
+    #schedule_busi_duration = schedule_busi['duration'].sum()
+    start_shift = schedule_busi["start time"].min()
+    end_shift = schedule_busi["end time"].max()
+    shift_duration = end_shift - start_shift
+    return shift_duration
+# alle pki's per bus in 1 functie gezet in df 
+def df_per_busi_kpi(schedule):
+    busnmbr = number_of_busses(schedule)
+    results = []
+    for i in busnmbr:
+        schedule_busi = schedule[schedule['bus']==i]
+        #def time_bus_shift(schedule):
+        #schedule_busi_duration = schedule_busi['duration'].sum()
+        #print(i, schedule_busi_duration) # -1 dag
+        times_charging = times_charging_bus(schedule_busi)
+        total_energy = total_energy_use(schedule_busi)
+        dur_idle, avg_idle = idle_time_avg__per_bus(schedule_busi)
+        shift_duration =  time_bus_shift(schedule_busi)
+        
+        results.append({
+                'bus': i,
+                'duration_time_shift' :shift_duration,
+                'times_charging': times_charging,
+                'total_energy': total_energy,
+                'total_idle_duration': dur_idle,
+                'avg_idle_duration': avg_idle
+            })
+    bus_stats_df = pd.DataFrame(results)
+    return bus_stats_df
+
+# BATTERY NIVEAU NA ELKE ACTIVITEIT 
+# bepaald de battery na elke activiteit en zet in df
+def battery_after_every_activity(schedule, max_bat, max_charging_percentage, state_of_health):   
+    max_bat = int(max_bat)
+    max_charging_percentage = int(max_charging_percentage)
+    state_of_health = int(state_of_health)
+
+    bat_status = max_bat * (state_of_health / 100) #
+    bat_begin = bat_status * (max_charging_percentage / 100) # 90 procent
+    energy_nivea_after = bat_begin
+    
+    busnmbr = (schedule['bus'].unique())
+    results = []
+    
+    for i in busnmbr:
+        schedule_busi = schedule[schedule['bus']==i]
+        max_bat=300
+        energy_nivea_after = max_bat
+        for j in range(len(schedule_busi)):
+            if schedule["activity"][i] == "idle":
+                minutes = schedule["duration"][i].total_seconds() / 60
+                energy_consumption = minutes * (schedule["energy consumption"][i] / 60)
+                energy_nivea_after -= energy_consumption
+            else:
+                energy_nivea_after -=schedule_busi['energy consumption'].iloc[j]
+                results.append({
+                    'bus': i,
+                    'activity': schedule['activity'][j],
+                    'energy niveau' :energy_nivea_after
+                        })
+    results_df = pd.DataFrame(results)
+    return results_df
+# ALLE KPI'S
+def all_kpi(schedule, max_bat, max_charging_percentage, state_of_health):
+    schedule = add_duration_activities(schedule)
+    df_timetable = not_drivinf_trip_duration_kort(schedule)
+    bus_stats_df = df_per_busi_kpi(schedule)
+    df_battery_level = battery_after_every_activity(schedule, max_bat, max_charging_percentage, state_of_health)
+    return df_timetable, bus_stats_df, df_battery_level
+
 
 st.title("Busplan Checker")
 
-uploaded_schedule = st.file_uploader("Upload het busplan (Excel)", type=["xlsx"])
-uploaded_matrix = st.file_uploader("Upload de distance matrix (Excel)", type=["xlsx"])
+uploaded_schedule = st.file_uploader("Upload the busplan (Excel)", type=["xlsx"])
+uploaded_matrix = st.file_uploader("Upload the distance matrix (Excel)", type=["xlsx"])
+uploaded_timetable = st.file_uploader("Upload the timetable (Excel)", type=["xlsx"])
 
 st.sidebar.header("setting parameters")
 
@@ -278,15 +493,19 @@ state_of_health = st.sidebar.number_input("State of Health (%)", value=95.0, ste
 min_percentage = st.sidebar.number_input("Minimum battery percentage (%)", value=10.0, step=1.0)
 min_laden = st.sidebar.number_input("minimum chaging time (minuten)", value=30.0, step=1.0)
 
-if uploaded_schedule and uploaded_matrix:
+if uploaded_schedule and uploaded_matrix and uploaded_timetable:
     # Data inladen
-    schedule, matrix = import_busplan(uploaded_schedule, uploaded_matrix)
+    schedule, matrix, timetable = import_busplan(uploaded_schedule, uploaded_matrix, uploaded_timetable)
 
     st.subheader("Bus Schedule")
     st.dataframe(schedule.head(5))
 
     st.subheader("Distance Matrix")
     st.dataframe(matrix.head(5))
+
+    st.subheader("Timetable")
+    st.dataframe(timetable.head(5))
+
 
     if st.button("Start check"):
         st.subheader("results of the checks")
@@ -343,8 +562,64 @@ if uploaded_schedule and uploaded_matrix:
                     st.error(msg)
             else:
                 st.success("all busses stay above the minimum battery status")
+                
+            #timetable vs schedule check
+            st.write("**Schedule vs Timetable check:**")
+
+            missing = schedule_not_in_timetable(schedule, timetable)
+
+            missing, bad_schedule_lines, bad_timetable_lines = schedule_not_in_timetable(schedule, timetable)
+
+            # Toon eventuele problematische 'line'-waarden
+            if not bad_schedule_lines.empty:
+                st.warning("there are schedule rows with strange 'line' values (not an integer after normalization):")
+                st.dataframe(bad_schedule_lines)
+
+            if not bad_timetable_lines.empty:
+                st.warning("there are timetable rows with strange 'line' values (not an integer after normalization):")
+                st.dataframe(bad_timetable_lines)
+
+            # Toon de daadwerkelijke mismatch
+            if missing.empty:
+                st.success("all service trips in the schedule are in the timetable")
+            else:
+                st.error("there are service trips in the schedule which are not in the timetable, check:")
+                st.dataframe(missing)
+
 
         except Exception as e:
             st.error(f"something went wrong at check {e}")
+
+    #Nieuwe knop: KPI-analyse
+    if st.button("Show KPI analysis"):
+        st.subheader("KPI Results")
+
+        try:
+            # KPI’s berekenen
+            df_timetable, bus_stats_df, df_battery_level = all_kpi(
+            schedule,
+            max_bat,
+            max_charging_percentage,
+            state_of_health
+            )
+
+            # Toon aantal bussen
+            aantal_bussen = len(schedule['bus'].unique())
+            st.write(f"### Number of buses in this schedule: {aantal_bussen}")
+
+            # Toon algemene activiteitverdeling
+            st.write("### total time per activity (all buses)")
+            st.dataframe(df_timetable)
+
+            # Toon KPI’s per bus
+            st.write("### KPI’s per bus")
+            st.dataframe(bus_stats_df)
+            # Toon batterijprofiel
+            st.write("### battery level after each activity")
+            st.dataframe(df_battery_level)
+
+        except Exception as e:
+            st.error(f"Something went wrong while calculating KPIs: {e}")
+
 
 # streamlit run start_web_versie.py
