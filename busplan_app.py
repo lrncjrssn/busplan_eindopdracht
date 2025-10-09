@@ -5,7 +5,7 @@ import plotly.io as pio
 import streamlit as st
 from gehele_functie import import_busplan, add_duration_activities
 
-st.set_page_config(page_title="Bus schedule Visualisations", layout="wide")
+#st.set_page_config(page_title="Bus schedule Visualisations", layout="wide")
 
 st.title("Bus schedule Visualisations")
 st.write("This dashboard shows various visualisations of the bus schedule.")

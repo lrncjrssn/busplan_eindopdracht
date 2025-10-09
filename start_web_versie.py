@@ -485,6 +485,114 @@ def all_kpi(schedule, max_bat, max_charging_percentage, state_of_health):
     return df_timetable, bus_stats_df, df_battery_level
 
 
+##visualisatie functies
+import plotly.express as px
+import plotly.io as pio
+
+def fix_midnight(schedule):
+    """
+    Adjusts the times in the bus schedule to handle activities that span midnight.
+    """
+    df = schedule.copy()
+    for col in ["start time", "end time"]:
+        df[col] = pd.to_datetime(df[col]).dt.tz_localize(None)
+        df[col] = pd.to_datetime("2025-01-01 " + df[col].dt.strftime("%H:%M:%S"))
+
+    fixed_times = []
+    for bus, group in df.groupby("bus"):
+        g = group.copy()
+        midnight_cutoff = pd.to_datetime("2025-01-01 04:00:00")
+        mask = g["start time"] < midnight_cutoff
+        g.loc[mask, "start time"] += pd.Timedelta(days=1)
+        g.loc[mask, "end time"] += pd.Timedelta(days=1)
+        fixed_times.append(g)
+
+    return pd.concat(fixed_times)
+
+def gantt_chart(schedule):
+    df = fix_midnight(schedule)
+    df["bus_str"] = df["bus"].astype(str)
+    bus_order = sorted(df["bus_str"].unique(), key=lambda x: int(x))
+
+    fig = px.timeline(
+        df,
+        x_start="start time",
+        x_end="end time",
+        y="bus_str",
+        color="activity",
+        category_orders={"bus_str": bus_order},
+        hover_data=["start location", "end location", "line", "energy consumption"]
+    )
+    fig.update_yaxes(autorange="reversed")
+    fig.update_xaxes(tickformat="%H:%M")
+    fig.update_layout(title="Bus Schedule Gantt Chart", yaxis_title="Bus", height=650)
+    st.plotly_chart(fig, use_container_width=True)
+
+def pie_chart_total(schedule):
+    activity_durations = schedule.groupby('activity')['duration'].sum()
+    activity_percentages = activity_durations / activity_durations.sum() * 100
+
+    fig = px.pie(
+        names=activity_percentages.index,
+        values=activity_percentages.values,
+        title='Activity Distribution (time %) for all Buses'
+    )
+    fig.update_traces(textposition='inside', textinfo='percent+label')
+    st.plotly_chart(fig, use_container_width=True)
+
+def stacked_bar_chart(schedule):
+    schedule = schedule.copy()
+    schedule['duration_hours'] = schedule['duration'] / pd.Timedelta(hours=1)
+
+    activity_durations = schedule.groupby(['bus', 'activity'])['duration_hours'].sum().reset_index()
+
+    fig = px.bar(
+        activity_durations,
+        y='bus',  # bus op y-as
+        x='duration_hours',  # uren op x-as
+        color='activity',
+        title='Activity Duration Distribution per Bus',
+        labels={'duration_hours': 'Total Duration (hours)', 'bus': 'Bus'},
+        text_auto=True,
+        orientation='h'  # horizontale bar chart
+    )
+
+    fig.update_layout(barmode='stack')
+    st.plotly_chart(fig, use_container_width=True)
+
+def plot_soc(schedule, max_bat, state_of_health, min_percentage):
+    battery_capacity = max_bat * (state_of_health / 100)
+    df = fix_midnight(schedule).copy()
+    all_buses = []
+
+    for bus, group in df.groupby("bus"):
+        g = group.copy().sort_values("start time")
+        g["cumulative_energy"] = g["energy consumption"].cumsum()
+        g["SoC (%)"] = (battery_capacity - g["cumulative_energy"]) / battery_capacity * 100
+        g["bus"] = str(bus)
+        all_buses.append(g[["bus", "start time", "SoC (%)"]])
+
+    soc_df = pd.concat(all_buses)
+
+    fig = px.line(
+        soc_df,
+        x="start time",
+        y="SoC (%)",
+        color="bus",
+        title="State of Charge per Bus",
+        labels={"start time": "Time", "SoC (%)": "State of Charge (%)"}
+    )
+    fig.update_xaxes(tickformat="%H:%M")
+    fig.update_layout(yaxis=dict(range=[0, 105]), height=700)
+    fig.add_hline(
+        y=min_percentage,
+        line_dash="dot",
+        line_color="red",
+        annotation_text=f"{min_percentage}% minimum",
+        annotation_position="top left"
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
 st.title("Busplan Checker")
 
 uploaded_schedule = st.file_uploader("Upload the busplan (Excel)", type=["xlsx"])
@@ -626,6 +734,26 @@ if uploaded_schedule and uploaded_matrix and uploaded_timetable:
 
         except Exception as e:
             st.error(f"Something went wrong while calculating KPIs: {e}")
+        
+    if st.button("Show Visualisations"):
+        try:
+            schedule = add_duration_activities(schedule) 
+
+            st.subheader("Gantt chart")
+            gantt_chart(schedule)
+
+            st.subheader("Activity distribution")
+            pie_chart_total(schedule)
+
+            st.subheader("Activity per bus")
+            stacked_bar_chart(schedule)
+
+            st.subheader("Battery profile per bus")
+            plot_soc(schedule, max_bat, state_of_health, min_percentage)
+
+        except Exception as e:
+            st.error(f"Something went wrong while generating visualisations: {e}")
+
 
 
 # streamlit run start_web_versie.py

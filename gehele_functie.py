@@ -42,6 +42,10 @@ def  merge_schedule_matrix(schedule, matrix):
     matrix["start"] = matrix["start"].astype(str)
     matrix["end"] = matrix["end"].astype(str)
     matrix["line"] = matrix["line"].astype(str)
+
+    print(schedule.dtypes)
+    print(matrix.dtypes)
+
     matched = schedule.merge(
         matrix,
         left_on=["start location", "end location", "line"],
@@ -53,6 +57,7 @@ def  merge_schedule_matrix(schedule, matrix):
     matched["end time"] = pd.to_datetime(matched["end time"], format="%H:%M:%S")
     matched["duration"] = matched["end time"] - matched["start time"]
     matched = matched.drop(columns=["start", "end"])
+    print(matched.head())
     return matched
     
 def min_max_duration_travel_times(matrix):
@@ -84,8 +89,9 @@ def travel_time(matched):
     n = len(matched)
     invalid = []
     for i in range (n):
-        if matched["duration"].iloc[i] > matched["max_travel_time"].iloc[i] and matched["duration"].iloc[i] < matched["min_travel_time"].iloc[i]:
+        if matched["duration"].iloc[i] > matched["max_travel_time"].iloc[i] or matched["duration"].iloc[i] < matched["min_travel_time"].iloc[i]:
             invalid.append(i)
+            print(matched.iloc[i])
     return invalid
 
 def invalid_start_time(schedule):
@@ -222,5 +228,5 @@ def check_all_busplan(file, max_bat, max_charging_percentage, state_of_health, m
     check_battery_level(schedule, max_bat, max_charging_percentage, state_of_health, min_percentage)           
 
 if __name__ == "__main__":
-    check_all_busplan("Bus planning.xlsx", 300, 90, 95, 10, 15)    
+    check_all_busplan("Bus Planning Casus 1.xlsx", 300, 90, 95, 10, 15)    
 
