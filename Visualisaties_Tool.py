@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.io as pio
+import streamlit as st
 
 pio.renderers.default = 'browser'
 
@@ -197,9 +198,10 @@ def visualisations():
     gantt_chart(bus_schedule)
 
     # Create and display pie charts
-    pie_charts(bus_schedule)
+    #pie_charts(bus_schedule)
 
     # Create and display state of charge plots
     plot_soc(bus_schedule)
 
 visualisations()
+
