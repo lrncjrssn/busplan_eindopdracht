@@ -132,7 +132,7 @@ def not_driving_trip_duration(schedule): # duur. mat_charging_udke
 
     print(per_charging+per_idle+per_material, '% van de tijd dat bus geen mensen vervoerd.') 
 
-def not_drivinf_trip_duration_kort(schedule):
+def not_drivinf_trip_duration_kort(schedule):# aaname activities=["material trip", "charging", "idle", "service trip"]
     total_duration = schedule['duration'].sum()
     print(total_duration)
 
@@ -141,6 +141,7 @@ def not_drivinf_trip_duration_kort(schedule):
     for i in activities:
         schedule_activtyi = schedule[schedule['activity'] == i].copy()
         total_activityi = schedule_activtyi['duration'].sum()
+
 
         per_activity = total_activityi/total_duration*100
         results.append({
@@ -154,6 +155,7 @@ def not_drivinf_trip_duration_kort(schedule):
         'total_time': total_duration,
         'percentage': 100.0
     }
+    results_df['percentage'].round(2)
     return results_df
 
 # KPI PER BUS  
