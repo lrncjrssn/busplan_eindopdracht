@@ -7,6 +7,62 @@
 # aaaaaaaaaagem idle time per bus
 import pandas as pd
 
+# per bus probeersel
+schedule  = pd.read_excel('Bus Planning.xlsx')
+schedule["start time"] = pd.to_datetime(schedule["start time"], format="%H:%M:%S")
+schedule["end time"] = pd.to_datetime(schedule["end time"], format="%H:%M:%S")
+schedule["duration"] = schedule["end time"] - schedule["start time"]
+
+total_duration = schedule['duration'].sum()
+print(total_duration)
+busnmbr = (schedule['bus'].unique())
+results = []
+activities=["material trip", "charging", "idle", "service trip"]
+for b in busnmbr:
+    schedule_busi = schedule[schedule['bus']==b]
+        
+    for i in activities:
+        schedule_activtyi = schedule[schedule['activity'] == i].copy()
+        total_activityi = schedule_activtyi['duration'].sum()
+        if total_duration > pd.Timedelta(0):
+            per_activity = total_activityi/total_duration*100
+        else:
+            per_activity=0
+        results.append({
+            'bus':b,
+            'activity': i,
+            'total_time': total_activityi,
+            'percentage' : per_activity
+                        })
+    results_df = pd.DataFrame(results)
+    results_df.loc[len(results_df)] = {
+        'bus':'All busses',
+        'activity': 'Total',
+        'total_time': total_duration,            
+        'percentage': 100.0      
+        }
+pivot_df = results_df.pivot(
+    index="bus",
+    columns="activity",
+    values=["total_time", "percentage"]
+)
+
+# Kolomnamen netjes maken
+pivot_df.columns = [f"{val}_{col}" for val, col in pivot_df.columns]
+pivot_df = pivot_df.reset_index()
+
+print("Brede tabel per bus:")
+print(pivot_df)
+
+## Optie 2: Gesorteerd logboek per bus
+sorted_df = results_df.sort_values(["bus", "activity"]).reset_index(drop=True)
+
+print("\nLange tabel per bus (logboek):")
+print(sorted_df)
+#print(results_df)
+
+
+
 #import busplan
 def import_busplan(file):
     """
@@ -22,6 +78,7 @@ def import_busplan(file):
     import pandas as pd
     schedule  = pd.read_excel(file)
     return schedule
+
 #duur activiteiten
 def add_duration_activities(schedule):
     """
@@ -134,6 +191,12 @@ def time_bus_shift(schedule_busi):
     shift_duration = end_shift - start_shift
     return shift_duration
 # alle pki's per bus in 1 functie gezet in df 
+def format_timedelta(duur):
+    totaal_seconden = int(duur.total_seconds())
+    uren = totaal_seconden // 3600
+    minuten = (totaal_seconden % 3600) // 60
+    return f"{uren:02}:{minuten:02}"
+
 def df_per_busi_kpi(schedule):
     busnmbr = number_of_busses(schedule)
     results = []
@@ -148,13 +211,13 @@ def df_per_busi_kpi(schedule):
         shift_duration =  time_bus_shift(schedule_busi)
         
         results.append({
-                'bus': i,
-                'time_shift' :shift_duration,
-                'times_charging': times_charging,
-                'total_energy': total_energy,
-                'total_idle_duration': dur_idle,
-                'avg_idle_duration': avg_idle
-            })
+            'bus': i,
+            'duration_time_shift' : format_timedelta(shift_duration),
+            'times_charging': times_charging,
+            'total_energy': total_energy,
+            'total_idle_duration': format_timedelta(dur_idle),
+            'avg_idle_duration': format_timedelta(avg_idle)
+        })
     bus_stats_df = pd.DataFrame(results)
     return bus_stats_df
 
@@ -201,6 +264,29 @@ def all_kpi(file, max_bat, max_charging_percentage, state_of_health):
     df_battery_level = battery_after_every_activity(schedule, max_bat, max_charging_percentage, state_of_health)
     return df_timetable, bus_stats_df, df_battery_level
 
+
 # check
 df_timetable, bus_stats_df, df_battery_level = all_kpi('Bus planning.xlsx',300, 90,85)
 print(df_timetable, bus_stats_df, df_battery_level)
+
+
+#totaal_seconden = int(duur.total_seconds())
+#uren = totaal_seconden // 3600
+#minuten = (totaal_seconden % 3600) // 60
+
+#tijd_str = f"{uren:02}:{minuten:02}"
+
+# tonen in Streamlit
+#st.write(f"Duur: {tijd_str}")
+
+
+
+
+#def format_timedelta(duur):
+#    totaal_seconden = int(duur.total_seconds())
+#    uren = totaal_seconden // 3600
+#    minuten = (totaal_seconden % 3600) // 60
+#    return f"{uren:02}:{minuten:02}"
+
+# nieuwe kolom met geformatteerde tijd
+#df['duur (HH:MM)'] = df['duur'].apply(format_timedelta)
