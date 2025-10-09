@@ -191,6 +191,12 @@ def time_bus_shift(schedule_busi):
     shift_duration = end_shift - start_shift
     return shift_duration
 # alle pki's per bus in 1 functie gezet in df 
+def format_timedelta(duur):
+    totaal_seconden = int(duur.total_seconds())
+    uren = totaal_seconden // 3600
+    minuten = (totaal_seconden % 3600) // 60
+    return f"{uren:02}:{minuten:02}"
+
 def df_per_busi_kpi(schedule):
     busnmbr = number_of_busses(schedule)
     results = []
@@ -205,13 +211,13 @@ def df_per_busi_kpi(schedule):
         shift_duration =  time_bus_shift(schedule_busi)
         
         results.append({
-                'bus': i,
-                'duration_time_shift' :shift_duration,
-                'times_charging': times_charging,
-                'total_energy': total_energy,
-                'total_idle_duration': dur_idle,
-                'avg_idle_duration': avg_idle
-            })
+            'bus': i,
+            'duration_time_shift' : format_timedelta(shift_duration),
+            'times_charging': times_charging,
+            'total_energy': total_energy,
+            'total_idle_duration': format_timedelta(dur_idle),
+            'avg_idle_duration': format_timedelta(avg_idle)
+        })
     bus_stats_df = pd.DataFrame(results)
     return bus_stats_df
 
@@ -260,6 +266,27 @@ def all_kpi(file, max_bat, max_charging_percentage, state_of_health):
 
 
 # check
-#df_timetable, bus_stats_df, df_battery_level = all_kpi('Bus planning.xlsx',300, 90,85)
-#print(df_timetable, bus_stats_df, df_battery_level)
+df_timetable, bus_stats_df, df_battery_level = all_kpi('Bus planning.xlsx',300, 90,85)
+print(df_timetable, bus_stats_df, df_battery_level)
 
+
+#totaal_seconden = int(duur.total_seconds())
+#uren = totaal_seconden // 3600
+#minuten = (totaal_seconden % 3600) // 60
+
+#tijd_str = f"{uren:02}:{minuten:02}"
+
+# tonen in Streamlit
+#st.write(f"Duur: {tijd_str}")
+
+
+
+
+#def format_timedelta(duur):
+#    totaal_seconden = int(duur.total_seconds())
+#    uren = totaal_seconden // 3600
+#    minuten = (totaal_seconden % 3600) // 60
+#    return f"{uren:02}:{minuten:02}"
+
+# nieuwe kolom met geformatteerde tijd
+#df['duur (HH:MM)'] = df['duur'].apply(format_timedelta)
