@@ -66,14 +66,14 @@ def add_duration_activities(schedule):
 def merge_schedule_matrix(schedule, matrix):
     schedule["start location"] = schedule["start location"].astype(str)
     schedule["end location"] = schedule["end location"].astype(str)
-    schedule["line"] = schedule["line"].astype(str)
+    schedule["line2"] = schedule["line"].astype(str)
 
     matrix["start"] = matrix["start"].astype(str)
     matrix["end"] = matrix["end"].astype(str)
     matrix["line"] = matrix["line"].astype(str)
     matched = schedule.merge(
         matrix,
-        left_on=["start location", "end location", "line"],
+        left_on=["start location", "end location", "line2"],
         right_on=["start", "end", "line"],
         how="inner")
     matched["min_travel_time"] = pd.to_timedelta(matched["min_travel_time"], unit = "m")
@@ -83,7 +83,7 @@ def merge_schedule_matrix(schedule, matrix):
     matched["duration"] = matched["end time"] - matched["start time"]
     matched = matched.drop(columns=["start", "end"])
     return matched
-    
+
 def remove_zero_duration(schedule, matrix):
     """
     Remove activities with zero duration from the schedule.
@@ -110,58 +110,60 @@ def min_max_duration_travel_times(matrix):
 def travel_time(matched):
     """
     Check if the scheduled durations are within the allowed min and max travel times.
-
-    Parameters:
-        schedule (DataFrame): Bus schedule with 'duration' column.
-        matrix (DataFrame): Distance matrix with 'min_travel_time' and 'max_travel_time'.
-
-    Returns:
-        list: List of row indices where travel time is outside allowed range.
+    Returns a DataFrame with the invalid rows (empty if none).
     """
+    invalid_rows = matched[
+        (matched["duration"] > matched["max_travel_time"]) |
+        (matched["duration"] < matched["min_travel_time"])
+    ].copy()
 
-    n = len(matched)
-    invalid = []
-    for i in range (n):
-        if matched["duration"].iloc[i] > matched["max_travel_time"].iloc[i] or matched["duration"].iloc[i] < matched["min_travel_time"].iloc[i]:
-            invalid.append(i)
-    return invalid
+    return invalid_rows
 
 def invalid_start_time(schedule):
     """
-    Identify activities with negative duration (start time after end time).
+    Identify activities where the end time is earlier than the start time (negative duration).
 
     Parameters:
-        schedule (DataFrame): Bus schedule with 'duration' column.
+        schedule (DataFrame): Bus schedule with 'start time', 'end time', and 'duration'.
 
     Returns:
-        list: List of row indices where duration is negative.
+        DataFrame: Rows with negative durations.
     """
-    n = len(schedule)
-    invalid2 = []
-    for i in range (n):
-        if schedule["duration"][i] < pd.Timedelta(0):
-            invalid2.append(i)
-    print(f'let op, controleer de volgende rij(en) {invalid2} of deze snachts rijden. Als dit niet zo is dan vertrekt de bus eerder dan dat het aankomt, dus klopt dat niet')
-    return invalid2
+    invalid_rows = schedule[schedule["duration"] < pd.Timedelta(0)].copy()
+    return invalid_rows
 
 def dubbele_bus(schedule):
     """
     Detect overlapping activities for the same bus.
-
+    
     Parameters:
         schedule (DataFrame): Bus schedule with 'bus', 'start time', and 'end time'.
-
+    
     Returns:
-        list: List of tuples indicating overlapping rows (i, i+1).
+        DataFrame: Rows where a bus has overlapping activities.
     """
-    n = len(schedule)
-    invalid3 = []
-    for i in range (n-1):
-        if schedule["bus"][i] == schedule["bus"][i+1]:
-            if schedule["end time"][i] > schedule["start time"][i + 1]:
-                invalid3.append((i, i+1))
-    print(f'let op, controleer de volgende rij(en) {invalid3} of deze snachts rijden. Als dit niet zo is dan vertrekt de bus eerder dan dat het aankomt, dus klopt dat niet')
-    return invalid3
+    # Zorg dat de tijden datetime zijn en de data per bus op volgorde staat
+    schedule = schedule.copy()
+    schedule["start time"] = pd.to_datetime(schedule["start time"])
+    schedule["end time"] = pd.to_datetime(schedule["end time"])
+    schedule = schedule.sort_values(by=["bus", "start time"]).reset_index(drop=True)
+
+    # Lijst om overlappende rijen in te bewaren
+    overlapping_rows = []
+
+    for bus, group in schedule.groupby("bus"):
+        g = group.sort_values("start time").reset_index(drop=True)
+        for i in range(len(g) - 1):
+            if g.loc[i, "end time"] > g.loc[i + 1, "start time"]:
+                overlap_info = g.loc[[i, i + 1]].copy()
+                overlap_info["overlap_with_next"] = True
+                overlapping_rows.append(overlap_info)
+
+    if overlapping_rows:
+        overlaps_df = pd.concat(overlapping_rows)
+        return overlaps_df
+    else:
+        return pd.DataFrame()  # lege tabel = geen overlap
 
 def check_charging(schedule,min_laden):
     """
@@ -444,6 +446,10 @@ def df_per_busi_kpi(schedule):
     bus_stats_df = pd.DataFrame(results)
     return bus_stats_df
 
+def best_busses(bus_stats_df):
+    best_busses = bus_stats_df.sort_values(by='total energy').head(5)
+    return best_busses
+
 # BATTERY NIVEAU NA ELKE ACTIVITEIT 
 # bepaald de battery na elke activiteit en zet in df
 def battery_after_every_activity(schedule, max_bat, max_charging_percentage, state_of_health):   
@@ -632,26 +638,34 @@ if uploaded_schedule and uploaded_matrix and uploaded_timetable:
             # Reistijden check
             invalid_travel = travel_time(matched)
             st.write("**travel time check:**")
-            if invalid_travel:
-                st.error(f"there are travel times which are not in the marges: {invalid_travel}")
+            if not invalid_travel.empty:
+                st.error("There are travel times which are not in the allowed range:")
+                st.dataframe(invalid_travel)
             else:
-                st.success("all travel times are within the marges")
+                st.success("All travel times are within the allowed range")
+
 
             # Negatieve starttijden
             invalid_start = invalid_start_time(schedule)
             st.write("**Negative starttimes:**")
-            if invalid_start:
-                st.warning(f"check rows {invalid_start} there might be negative starttimes, check if they ride at night.")
-            else:
-                st.success("there are no negative starttimes")
 
-            # Dubbele bus overlappingen
-            dubbele = dubbele_bus(schedule)
-            st.write("**overlapping bus rides:**")
-            if dubbele:
-                st.warning(f"there are overlapping bus rides, check: {dubbele}.")
+            if not invalid_start.empty:
+                st.warning("There are activities where the end time is before the start time, check if these are night rides:")
+                st.dataframe(invalid_start[["bus", "start location", "end location", "start time", "end time", "duration"]])
             else:
-                st.success("there are no overlapping bus rides.")
+                st.success("All start and end times are valid.")
+
+
+            dubbele = dubbele_bus(schedule)
+            st.write("**Overlapping bus rides:**")
+
+            if not dubbele.empty:
+                st.warning("Some buses have overlapping activities, check if these are night rides:")
+                st.dataframe(
+                    dubbele[["bus", "start location", "end location", "activity", "start time", "end time"]]
+                )
+            else:
+                st.success("No overlapping bus rides detected.")
 
             # Laadduur check (gebruik return)
             st.write("**charging time check:**")
