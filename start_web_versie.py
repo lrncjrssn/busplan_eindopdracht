@@ -2,6 +2,44 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
+def fix_midnight(schedule, cutoff_hour=5):
+    """
+    Corrigeert ritten die over middernacht gaan zodat ze chronologisch correct worden weergegeven.
+    Alle tijden tussen 00:00 en cutoff_hour (standaard 05:00) worden beschouwd als behorend tot de volgende dag.
+
+    Parameters:
+        schedule (DataFrame): Busplanning met kolommen 'bus', 'start time', 'end time'.
+        cutoff_hour (int): Tijd (uur) tot waar ritten na middernacht naar de volgende dag worden verschoven.
+
+    Returns:
+        DataFrame: Schema met aangepaste tijden (start en eind), zodat Gantt-charts en KPI's kloppen.
+    """
+    df = schedule.copy()
+
+    # Zorg dat tijden datetime zijn
+    df["start time"] = pd.to_datetime(df["start time"].astype(str))
+    df["end time"] = pd.to_datetime(df["end time"].astype(str))
+
+    # Voeg een fictieve datum toe, zodat er chronologisch verschil is
+    df["start time"] = pd.to_datetime("2025-01-01 " + df["start time"].dt.strftime("%H:%M:%S"))
+    df["end time"] = pd.to_datetime("2025-01-01 " + df["end time"].dt.strftime("%H:%M:%S"))
+
+    # Corrigeer per bus afzonderlijk
+    fixed_times = []
+    for bus, group in df.groupby("bus"):
+        g = group.copy()
+
+        # Alles tussen 00:00 en cutoff_hour hoort bij de volgende dag
+        mask_start = g["start time"].dt.hour < cutoff_hour
+        mask_end = g["end time"].dt.hour < cutoff_hour
+
+        g.loc[mask_start, "start time"] += pd.Timedelta(days=1)
+        g.loc[mask_end, "end time"] += pd.Timedelta(days=1)
+
+        fixed_times.append(g)
+
+    df_fixed = pd.concat(fixed_times).sort_values(["bus", "start time"]).reset_index(drop=True)
+    return df_fixed
 
 def import_busplan(file, matrix_file, timetable_file):
     """
@@ -422,15 +460,15 @@ def format_timedelta(duur):
     minuten = (totaal_seconden % 3600) // 60
     return f"{uren:02}:{minuten:02}"
 
-def df_per_busi_kpi(schedule):
+def df_per_busi_kpi(df_fixed):
     """
     Calculate total duration, energy, and percentage per activity for each bus.
     """
-    schedule = schedule.copy()
+    schedule_fixed = df_fixed.copy()
     activities = ["material trip", "charging", "idle", "service trip"]
     results = []
 
-    for bus, group in schedule.groupby("bus"):
+    for bus, group in schedule_fixed.groupby("bus"):
         total_duration = group["duration"].sum()
         total_energy = group["energy consumption"].sum()  # ✅ energie per bus
 
@@ -447,7 +485,7 @@ def df_per_busi_kpi(schedule):
                 "activity": activity,
                 "total time": total_activity,
                 "percentage": percentage,
-                "total energy": total_energy  # ✅ opnemen in resultaten
+                "total energy": total_energy  # opnemen in resultaten
             })
 
         # totaalregel per bus
@@ -458,22 +496,22 @@ def df_per_busi_kpi(schedule):
             "percentage": 100.0,
             "total energy": total_energy
         })
+    df_results_beter = pd.DataFrame(results)
+    return df_results_beter
 
-    return pd.DataFrame(results)
-
-def best_busses(df_results):
+def best_busses(df_results_beter):
     """
     Return the top 5 buses with the longest total service trip duration.
     """
-    df_service = df_results[df_results["activity"] == "service trip"].copy()
+    df_service = df_result_beter[df_results_beter["activity"] == "service trip"].copy()
     best = df_service.sort_values(by="total time", ascending=False).head(5)
     return best
 
-def worst_busses(df_results):
+def worst_busses(df_results_beter):
     """
     Return the 5 buses with the shortest total service trip duration.
     """
-    df_service = df_results[df_results["activity"] == "service trip"].copy()
+    df_service = df_results_beter[df_results_beter["activity"] == "service trip"].copy()
     worst = df_service.sort_values(by="total time", ascending=True).head(5)
     return worst
 
@@ -522,25 +560,44 @@ def all_kpi(schedule, max_bat, max_charging_percentage, state_of_health):
 import plotly.express as px
 import plotly.io as pio
 
-def fix_midnight(schedule):
+def fix_midnight(schedule, cutoff_hour=5):
     """
-    Adjusts the times in the bus schedule to handle activities that span midnight.
+    Corrigeert ritten die over middernacht gaan zodat ze chronologisch correct worden weergegeven.
+    Alle tijden tussen 00:00 en cutoff_hour (standaard 05:00) worden beschouwd als behorend tot de volgende dag.
+
+    Parameters:
+        schedule (DataFrame): Busplanning met kolommen 'bus', 'start time', 'end time'.
+        cutoff_hour (int): Tijd (uur) tot waar ritten na middernacht naar de volgende dag worden verschoven.
+
+    Returns:
+        DataFrame: Schema met aangepaste tijden (start en eind), zodat Gantt-charts en KPI's kloppen.
     """
     df = schedule.copy()
-    for col in ["start time", "end time"]:
-        df[col] = pd.to_datetime(df[col]).dt.tz_localize(None)
-        df[col] = pd.to_datetime("2025-01-01 " + df[col].dt.strftime("%H:%M:%S"))
 
+    # Zorg dat tijden datetime zijn
+    df["start time"] = pd.to_datetime(df["start time"].astype(str))
+    df["end time"] = pd.to_datetime(df["end time"].astype(str))
+
+    # Voeg een fictieve datum toe, zodat er chronologisch verschil is
+    df["start time"] = pd.to_datetime("2025-01-01 " + df["start time"].dt.strftime("%H:%M:%S"))
+    df["end time"] = pd.to_datetime("2025-01-01 " + df["end time"].dt.strftime("%H:%M:%S"))
+
+    # Corrigeer per bus afzonderlijk
     fixed_times = []
     for bus, group in df.groupby("bus"):
         g = group.copy()
-        midnight_cutoff = pd.to_datetime("2025-01-01 04:00:00")
-        mask = g["start time"] < midnight_cutoff
-        g.loc[mask, "start time"] += pd.Timedelta(days=1)
-        g.loc[mask, "end time"] += pd.Timedelta(days=1)
+
+        # Alles tussen 00:00 en cutoff_hour hoort bij de volgende dag
+        mask_start = g["start time"].dt.hour < cutoff_hour
+        mask_end = g["end time"].dt.hour < cutoff_hour
+
+        g.loc[mask_start, "start time"] += pd.Timedelta(days=1)
+        g.loc[mask_end, "end time"] += pd.Timedelta(days=1)
+
         fixed_times.append(g)
 
-    return pd.concat(fixed_times)
+    df_fixed = pd.concat(fixed_times).sort_values(["bus", "start time"]).reset_index(drop=True)
+    return df_fixed
 
 def gantt_chart(schedule):
     df = fix_midnight(schedule)
