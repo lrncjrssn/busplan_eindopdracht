@@ -423,32 +423,59 @@ def format_timedelta(duur):
     return f"{uren:02}:{minuten:02}"
 
 def df_per_busi_kpi(schedule):
-    busnmbr = number_of_busses(schedule)
+    """
+    Calculate total duration, energy, and percentage per activity for each bus.
+    """
+    schedule = schedule.copy()
+    activities = ["material trip", "charging", "idle", "service trip"]
     results = []
-    for i in busnmbr:
-        schedule_busi = schedule[schedule['bus']==i]
-        #def time_bus_shift(schedule):
-        #schedule_busi_duration = schedule_busi['duration'].sum()
-        #print(i, schedule_busi_duration) # -1 dag
-        times_charging = times_charging_bus(schedule_busi)
-        total_energy = total_energy_use(schedule_busi)
-        dur_idle, avg_idle = idle_time_avg__per_bus(schedule_busi)
-        shift_duration =  time_bus_shift(schedule_busi)
-        
-        results.append({
-            'bus': i,
-            'duration time shift (HH:MM)' : format_timedelta(shift_duration),
-            'times charging': times_charging,
-            'total energy': total_energy,
-            'total idle duration (HH:MM)': format_timedelta(dur_idle),
-            'avg idle duration (HH:MM)': format_timedelta(avg_idle)
-        })
-    bus_stats_df = pd.DataFrame(results)
-    return bus_stats_df
 
-def best_busses(bus_stats_df):
-    best_busses = bus_stats_df.sort_values(by='total energy').head(5)
-    return best_busses
+    for bus, group in schedule.groupby("bus"):
+        total_duration = group["duration"].sum()
+        total_energy = group["energy consumption"].sum()  # ✅ energie per bus
+
+        for activity in activities:
+            act_group = group[group["activity"] == activity]
+            total_activity = act_group["duration"].sum()
+            if total_duration > pd.Timedelta(0):
+                percentage = round(total_activity / total_duration * 100, 2)
+            else:
+                percentage = 0.0
+
+            results.append({
+                "bus": bus,
+                "activity": activity,
+                "total time": total_activity,
+                "percentage": percentage,
+                "total energy": total_energy  # ✅ opnemen in resultaten
+            })
+
+        # totaalregel per bus
+        results.append({
+            "bus": bus,
+            "activity": "Total",
+            "total time": total_duration,
+            "percentage": 100.0,
+            "total energy": total_energy
+        })
+
+    return pd.DataFrame(results)
+
+def best_busses(df_results):
+    """
+    Return the top 5 buses with the longest total service trip duration.
+    """
+    df_service = df_results[df_results["activity"] == "service trip"].copy()
+    best = df_service.sort_values(by="total time", ascending=False).head(5)
+    return best
+
+def worst_busses(df_results):
+    """
+    Return the 5 buses with the shortest total service trip duration.
+    """
+    df_service = df_results[df_results["activity"] == "service trip"].copy()
+    worst = df_service.sort_values(by="total time", ascending=True).head(5)
+    return worst
 
 # BATTERY NIVEAU NA ELKE ACTIVITEIT 
 # bepaald de battery na elke activiteit en zet in df
@@ -742,6 +769,23 @@ if uploaded_schedule and uploaded_matrix and uploaded_timetable:
             # Toon KPI’s per bus
             st.write("### KPI’s per bus")
             st.dataframe(bus_stats_df)
+
+            # ✅ Beste & slechtste bussen
+            try:
+                best = best_busses(bus_stats_df)
+                worst = worst_busses(bus_stats_df)
+
+
+                st.write("### Best performing buses (longest total service trip duration)")
+                st.dataframe(best[["bus", "total energy", "total time"]])
+
+                st.write("### Worst performing buses (lowest total service trip duration)")
+                st.dataframe(worst[["bus", "total energy", "total time"]])
+
+            except Exception as e:
+                st.warning(f"Could not calculate best/worst buses: {e}")
+
+
             # Toon batterijprofiel
             st.write("### battery level after each activity")
             st.dataframe(df_battery_level)
