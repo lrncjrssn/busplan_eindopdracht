@@ -958,13 +958,13 @@ uploaded_schedule = st.file_uploader("Upload the busplan (Excel)", type=["xlsx"]
 uploaded_matrix = st.file_uploader("Upload the distance matrix (Excel)", type=["xlsx"])
 uploaded_timetable = st.file_uploader("Upload the timetable (Excel)", type=["xlsx"])
 
-st.sidebar.header("setting parameters")
+st.sidebar.header("Setting parameters")
 
 max_bat = st.sidebar.number_input("Maximum battery capacity (kWh)", value=350.0, step=1.0)
 max_charging_percentage = st.sidebar.number_input("Maximum charging percentage (%)", value=90.0, step=1.0)
 state_of_health = st.sidebar.number_input("State of Health (%)", value=95.0, step=1.0)
 min_percentage = st.sidebar.number_input("Minimum battery percentage (%)", value=10.0, step=1.0)
-min_laden = st.sidebar.number_input("Minimum charging time (minuten)", value=30.0, step=1.0)
+min_laden = st.sidebar.number_input("Minimum charging time (minutes)", value=30.0, step=1.0)
 
 if uploaded_schedule and uploaded_matrix and uploaded_timetable:
     schedule, matrix, timetable = import_busplan(uploaded_schedule, uploaded_matrix, uploaded_timetable)
